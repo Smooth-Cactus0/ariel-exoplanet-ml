@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Data files (large)
+data/raw/**/*.csv
+data/raw/**/*.pkl
+data/raw/split_*
+
+# Processed data (keep smaller files, ignore large caches)
+data/processed/*_cache.pkl
+data/processed/features_v*.pkl
+
+# Model weights and artifacts
+weights/
+catboost_info/
+*.model
+*.ubj
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# Temporary files
+*.log
+*.tmp
+.cache/
+
+# Environment
+.env
+venv/
+env/
+ENV/
+
+# Keep these important files
+!data/processed/v34a_artifacts.pkl
+!data/processed/v34c_artifacts.pkl
+!CURRENT_BEST_MODEL.md
+!PODIUM_ROADMAP.md
+!COMPLETE_HISTORY.md
+!CLAUDE.md
