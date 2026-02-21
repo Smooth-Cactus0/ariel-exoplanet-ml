@@ -58,14 +58,29 @@ def inspect_hdf5(path: Path, max_planets: int = 3) -> None:
 
             for pid in planet_ids[:max_planets]:
                 print(f"  [{pid}]")
-                for key in f[pid].keys():
+                item = f[pid]
+                if not hasattr(item, "keys"):
+                    # Top-level item is a dataset, not a group — print directly
+                    arr = item[()]
+                    print(f"    (dataset) shape={arr.shape}  dtype={arr.dtype}")
+                    print()
+                    continue
+                for key in item.keys():
                     try:
-                        arr = f[pid][key][()]
-                        print(
-                            f"    {key}: shape={arr.shape}  dtype={arr.dtype}"
-                            f"  min={float(np.nanmin(arr)):.4g}"
-                            f"  max={float(np.nanmax(arr)):.4g}"
-                        )
+                        child = item[key]
+                        if hasattr(child, "keys"):
+                            print(f"    {key}: (sub-group, {len(child.keys())} children)")
+                            continue
+                        arr = child[()]
+                        if np.issubdtype(arr.dtype, np.number):
+                            stats = (
+                                f"  min={float(np.nanmin(arr)):.4g}"
+                                f"  max={float(np.nanmax(arr)):.4g}"
+                            )
+                        else:
+                            preview = str(arr.flat[0]) if arr.size > 0 else ""
+                            stats = f"  sample={preview!r}"
+                        print(f"    {key}: shape={arr.shape}  dtype={arr.dtype}{stats}")
                     except Exception as e:
                         print(f"    {key}: ERROR reading — {e}")
                 print()
@@ -98,10 +113,9 @@ def inspect_csv(path: Path) -> None:
         print(f"\n  Head (5 rows):")
         print(df.to_string())
 
-        # Full row count
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            n_rows = sum(1 for _ in open(path)) - 1  # subtract header
+        # Full row count (encoding-safe)
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            n_rows = sum(1 for _ in fh) - 1  # subtract header
         print(f"\n  Total rows (approx): {n_rows}")
     except Exception as e:
         print(f"  ERROR reading CSV: {e}")
@@ -135,8 +149,8 @@ def main() -> None:
     # 1. File tree
     print_file_tree(root)
 
-    # 2. HDF5 files
-    for fpath in sorted(root.rglob("*.hdf5")) + sorted(root.rglob("*.h5")):
+    # 2. HDF5 files (deduplicated, unified sort)
+    for fpath in sorted(set(root.rglob("*.hdf5")) | set(root.rglob("*.h5"))):
         inspect_hdf5(fpath, max_planets=args.max_planets)
 
     # 3. Parquet files
