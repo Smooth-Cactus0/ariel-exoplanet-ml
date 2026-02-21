@@ -1,0 +1,46 @@
+# Data (too large, lives on Kaggle)
+data/raw/
+data/processed/
+data/preprocessed/
+*.hdf5
+*.parquet
+*.h5
+*.npy
+*.npz
+
+# Kaggle credentials
+.kaggle/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Models / artifacts
+models/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+
+# HuggingFace local cache
+hf_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
