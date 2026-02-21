@@ -75,7 +75,7 @@ class TransitCNN(nn.Module):
     Parameters
     ----------
     n_airs_channels : number of AIRS-CH0 wavelength channels  (default 356)
-    n_aux           : number of auxiliary stellar/planet features (default 9)
+    n_aux           : number of auxiliary ADC features             (default 5)
     n_output_wl     : number of output wavelength bins           (default 283)
     embed_dim       : internal AIRS encoder embedding dimension  (default 128)
     dropout         : dropout probability used throughout        (default 0.1)
@@ -84,7 +84,7 @@ class TransitCNN(nn.Module):
     def __init__(
         self,
         n_airs_channels: int = 356,
-        n_aux: int = 9,
+        n_aux: int = 5,
         n_output_wl: int = 283,
         embed_dim: int = 128,
         dropout: float = 0.1,

@@ -15,7 +15,7 @@ def _batch(batch_size: int = 4, time: int = 100) -> dict:
     return {
         "airs": torch.randn(batch_size, 356, time),
         "fgs1": torch.randn(batch_size, 1,   time),
-        "aux":  torch.randn(batch_size, 9),
+        "aux":  torch.randn(batch_size, 5),
     }
 
 

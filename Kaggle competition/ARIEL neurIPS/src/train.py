@@ -57,7 +57,7 @@ def make_labelled_subset(dataset: ArielDataset) -> Subset:
     ]
     if not labelled_idx:
         raise RuntimeError(
-            "No labelled planets found. Check that QuartilesTable.csv exists "
+            "No labelled planets found. Check that train_labels.csv exists "
             f"in {dataset.data_root}."
         )
     log.info(f"Labelled planets: {len(labelled_idx)} / {len(dataset)}")

@@ -12,8 +12,8 @@ Mock data structure (mirrors real competition layout):
         FGS1_calibration/
             dark.parquet  flat.parquet  dead.parquet  read.parquet  linear_corr.parquet
       ...
-    train_labels.csv                 (TODO: update regex if column format differs)
-    train_adc_info.csv               (mock auxiliary features)
+    train_labels.csv                 planet_id | wl_1 | wl_2 | ... | wl_283  (means only)
+    train_adc_info.csv               planet_id | 5 ADC features
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from src.dataset import ArielDataset, AIRS_N_ROWS, AIRS_N_COLS, FGS1_N_ROWS, FGS
 N_PLANETS  = 4
 N_TIME     = 60    # AIRS time steps (small for fast tests)
 N_WL       = 283   # output wavelengths
-N_AUX      = 9
+N_AUX      = 5     # confirmed: 5 ADC features
 
 
 def _write_cal_parquet(cal_dir: Path, n_rows: int, n_cols: int, rng: np.random.Generator) -> None:
@@ -74,7 +74,6 @@ def _make_mock_data_root(tmp_path: Path, with_labels: bool = True) -> Path:
         planet_dir.mkdir()
 
         # AIRS-CH0 signal: (N_TIME, AIRS_N_ROWS * AIRS_N_COLS) uint16
-        # Simulate raw ADU counts ~1300 ± 50
         airs_flat = rng.integers(1200, 1400, (N_TIME, AIRS_N_ROWS * AIRS_N_COLS), dtype=np.uint16)
         pd.DataFrame(airs_flat).to_parquet(planet_dir / "AIRS-CH0_signal.parquet", index=False)
 
@@ -86,34 +85,24 @@ def _make_mock_data_root(tmp_path: Path, with_labels: bool = True) -> Path:
         _write_cal_parquet(planet_dir / "AIRS-CH0_calibration", AIRS_N_ROWS, AIRS_N_COLS, rng)
         _write_cal_parquet(planet_dir / "FGS1_calibration",     FGS1_N_ROWS, FGS1_N_COLS, rng)
 
-    # Auxiliary features (mock train_adc_info.csv)
+    # Auxiliary features (confirmed: train_adc_info.csv with planet_id column)
     aux_cols = [
-        "Star_Distance", "Stellar_Mass", "Star_Radius",
-        "Star_Temp", "Planet_Mass", "Period", "Sma",
-        "Planet_Radius", "Surface_Gravity",
+        "FGS1_adc_offset", "FGS1_adc_gain",
+        "AIRS-CH0_adc_offset", "AIRS-CH0_adc_gain",
+        "star",
     ]
-    aux_df = pd.DataFrame(
-        rng.uniform(0.1, 10.0, (N_PLANETS, N_AUX)),
-        index=[int(pid) for pid in planet_ids],
-        columns=aux_cols,
-    )
-    aux_df.to_csv(tmp_path / "train_adc_info.csv", index=True)
+    aux_data = rng.uniform(0.1, 10.0, (N_PLANETS, N_AUX)).astype(np.float32)
+    aux_df = pd.DataFrame(aux_data, columns=aux_cols)
+    aux_df.insert(0, "planet_id", [int(pid) for pid in planet_ids])
+    aux_df.to_csv(tmp_path / "train_adc_info.csv", index=False)
 
-    # Labels (train_labels.csv) — using {i}_q1/q2/q3 format (TODO: verify)
+    # Labels (confirmed: planet_id | wl_1 | wl_2 | ... | wl_283, means only)
     if with_labels:
-        q_cols: list[str] = []
-        for i in range(N_WL):
-            q_cols += [f"{i}_q1", f"{i}_q2", f"{i}_q3"]
-        q_data = rng.uniform(0.0, 0.02, (N_PLANETS, len(q_cols))).astype(np.float32)
-        for i in range(N_WL):
-            b = i * 3
-            q_data[:, b : b + 3] = np.sort(q_data[:, b : b + 3], axis=1)
-        q_df = pd.DataFrame(
-            q_data,
-            index=[int(pid) for pid in planet_ids],
-            columns=q_cols,
-        )
-        q_df.to_csv(tmp_path / "train_labels.csv", index=True)
+        wl_cols = [f"wl_{i}" for i in range(1, N_WL + 1)]
+        wl_data = rng.uniform(0.0, 0.02, (N_PLANETS, N_WL)).astype(np.float32)
+        label_df = pd.DataFrame(wl_data, columns=wl_cols)
+        label_df.insert(0, "planet_id", [int(pid) for pid in planet_ids])
+        label_df.to_csv(tmp_path / "train_labels.csv", index=False)
 
     return tmp_path
 
@@ -140,7 +129,7 @@ def test_dataset_length(mock_root):
 def test_dataset_item_keys_labelled(mock_root):
     ds = ArielDataset(mock_root, split="train", preprocess=False)
     sample = ds[0]
-    expected = {"planet_id", "airs", "fgs1", "aux", "target_mean", "target_std"}
+    expected = {"planet_id", "airs", "fgs1", "aux", "target_mean"}
     assert set(sample.keys()) == expected
 
 
@@ -148,7 +137,6 @@ def test_dataset_item_keys_unlabelled(mock_root_no_labels):
     ds = ArielDataset(mock_root_no_labels, split="train", preprocess=False)
     sample = ds[0]
     assert "target_mean" not in sample
-    assert "target_std"  not in sample
 
 
 def test_raw_tensor_shapes(mock_root):
@@ -168,24 +156,16 @@ def test_preprocessed_tensor_shapes(mock_root):
     assert sample["fgs1"].shape == (1, expected_time)
 
 
-def test_target_shapes(mock_root):
+def test_target_shape(mock_root):
     ds = ArielDataset(mock_root, split="train", preprocess=False)
     sample = ds[0]
     assert sample["target_mean"].shape == (N_WL,)
-    assert sample["target_std"].shape  == (N_WL,)
-
-
-def test_target_std_nonnegative(mock_root):
-    ds = ArielDataset(mock_root, split="train", preprocess=False)
-    for i in range(N_PLANETS):
-        std = ds[i]["target_std"]
-        assert (std >= 0).all(), f"target_std must be non-negative for planet {i}"
 
 
 def test_all_tensors_float32(mock_root):
     ds = ArielDataset(mock_root, split="train", preprocess=False)
     sample = ds[0]
-    for key in ("airs", "fgs1", "aux", "target_mean", "target_std"):
+    for key in ("airs", "fgs1", "aux", "target_mean"):
         assert sample[key].dtype == torch.float32, f"{key} must be float32"
 
 
@@ -193,8 +173,6 @@ def test_calibration_reduces_raw_values(mock_root):
     """After dark subtraction, calibrated AIRS values should differ from raw."""
     ds = ArielDataset(mock_root, split="train", preprocess=False)
     sample = ds[0]
-    # Raw ADU ~1300; after dark subtract (~150) and sum over 32 rows, values change
-    # Just ensure we get finite, non-trivially-zero output
     airs = sample["airs"].numpy()
     assert np.isfinite(airs).all(), "Calibrated AIRS must be finite"
     assert airs.max() > 0, "Calibrated AIRS must have positive values"

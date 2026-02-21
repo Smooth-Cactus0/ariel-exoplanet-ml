@@ -19,10 +19,14 @@ Data format (confirmed from Kaggle exploration 2026-02-21):
           linear_corr.parquet      (192, 32)
 
 Root-level files:
-  train_labels.csv    — ground-truth transmission spectra (TODO: verify column format)
-  train_adc_info.csv  — auxiliary stellar/planetary features (TODO: verify column format)
-  wavelengths.csv     — wavelength mapping (356 AIRS channels → 283 output wavelengths)
-  axis_info.parquet   — time/spatial axis metadata
+  train_labels.csv    — ground-truth transmission spectra: planet_id | wl_1 ... wl_283
+                        ONLY mean values (no quartile/sigma columns). ~24% of planets labelled.
+  train_adc_info.csv  — per-planet ADC calibration: planet_id | FGS1_adc_offset |
+                        FGS1_adc_gain | AIRS-CH0_adc_offset | AIRS-CH0_adc_gain | star
+                        These 5 values are used as auxiliary features for the model.
+  wavelengths.csv     — (1, 283) output wavelength values in microns:
+                        wl_1 = 0.705 µm (FGS1 channel), wl_2–wl_283 = 282 AIRS bins
+  axis_info.parquet   — (135000, 4) time/wavelength axis metadata
 
 Detector constants (confirmed):
   AIRS_N_ROWS   = 32   (spatial rows)
@@ -100,9 +104,9 @@ class ArielDataset(Dataset):
         planet_id    : str
         airs         : (356, time) float32 tensor  — channel-first for Conv1d
         fgs1         : (1, time)  float32 tensor
-        aux          : (n_aux,)   float32 tensor   — stellar/planetary parameters
+        aux          : (5,)       float32 tensor   — ADC gain/offset + star type
         target_mean  : (283,)     float32 tensor   — only for labelled train planets
-        target_std   : (283,)     float32 tensor   — only for labelled train planets
+                                                     (sigma is not supervised; learned via GLL loss)
     """
 
     def __init__(
@@ -128,27 +132,29 @@ class ArielDataset(Dataset):
             d.name for d in self.split_dir.iterdir() if d.is_dir()
         )
 
-        # ── Auxiliary features ───────────────────────────────────────────
-        # TODO: verify which CSV/parquet file contains auxiliary features
-        # and what its column names are after running the inspection script.
-        # Candidates: train_adc_info.csv, axis_info.parquet
+        # ── Auxiliary features (confirmed: train_adc_info.csv) ───────────
+        # 5 columns: FGS1_adc_offset, FGS1_adc_gain, AIRS-CH0_adc_offset,
+        #            AIRS-CH0_adc_gain, star  (indexed by planet_id int)
+        self._aux_cols = [
+            "FGS1_adc_offset", "FGS1_adc_gain",
+            "AIRS-CH0_adc_offset", "AIRS-CH0_adc_gain",
+            "star",
+        ]
+        adc_path = self.data_root / f"{split}_adc_info.csv"
         self.aux: Optional[pd.DataFrame] = None
-        for candidate in [
-            self.data_root / f"{split}_adc_info.csv",
-            self.data_root / "AuxillaryTable.csv",
-        ]:
-            if candidate.exists():
-                self.aux = pd.read_csv(candidate, index_col=0)
-                break
+        if adc_path.exists():
+            self.aux = pd.read_csv(adc_path).set_index("planet_id")
 
-        # ── Labels (train split only) ────────────────────────────────────
-        # TODO: verify column format of train_labels.csv after inspection.
+        # ── Labels (train split only, confirmed format) ──────────────────
+        # train_labels.csv: planet_id | wl_1 | wl_2 | ... | wl_283
+        # Provides mean transmission spectrum only — NO sigma ground truth.
+        # Sigma is learned purely via GLL loss during training. ~24% labelled.
         self.labels: Optional[pd.DataFrame] = None
         self._labelled_ids: set[str] = set()
         if split == "train":
             label_path = self.data_root / "train_labels.csv"
             if label_path.exists():
-                self.labels = pd.read_csv(label_path, index_col=0)
+                self.labels = pd.read_csv(label_path).set_index("planet_id")
                 self._labelled_ids = set(self.labels.index.astype(str))
 
     # ── Internal helpers ─────────────────────────────────────────────────
@@ -206,35 +212,31 @@ class ArielDataset(Dataset):
             return trimmed.reshape(n_time_airs, ratio).mean(axis=1)  # (n_time_airs,)
         return fgs1_full[:n_time_airs]
 
-    def _parse_labels(self, pid: str) -> tuple[np.ndarray, np.ndarray]:
+    def _parse_labels(self, pid: str) -> np.ndarray:
         """
-        Parse train_labels.csv row into (target_mean, target_std).
+        Parse train_labels.csv row into target_mean.
 
-        TODO: update regex after confirming column format from inspection script.
-        Expected format: columns like '{i}_q1', '{i}_q2', '{i}_q3' for i in 0..282,
-        OR 'wl_1', 'wl_2', ... with uncertainty columns.
+        Confirmed format (2026-02-21): planet_id | wl_1 | wl_2 | ... | wl_283
+        Only mean transmission values are provided — no sigma/quartile columns.
+        Sigma is purely model-predicted and trained via GLL loss.
         """
         row = self.labels.loc[int(pid)]
-        q1 = row.filter(regex=r"^\d+_q1$").values.astype(np.float32)
-        q2 = row.filter(regex=r"^\d+_q2$").values.astype(np.float32)
-        q3 = row.filter(regex=r"^\d+_q3$").values.astype(np.float32)
-        target_mean = q2
-        target_std  = (q3 - q1) / 2.0
-        return target_mean, target_std
+        wl_cols = [f"wl_{i}" for i in range(1, 284)]
+        return row[wl_cols].values.astype(np.float32)
 
     def _get_aux(self, pid: str) -> np.ndarray:
         """
-        Return auxiliary features for planet `pid`.
+        Return the 5 ADC auxiliary features for planet `pid`.
 
-        TODO: update once train_adc_info.csv column format is confirmed.
+        Confirmed columns: FGS1_adc_offset, FGS1_adc_gain, AIRS-CH0_adc_offset,
+        AIRS-CH0_adc_gain, star  (from train_adc_info.csv).
         """
         if self.aux is not None:
             try:
-                return self.aux.loc[int(pid)].values.astype(np.float32)
+                return self.aux.loc[int(pid)][self._aux_cols].values.astype(np.float32)
             except KeyError:
                 pass
-        # Fallback: zero vector (will be updated once format is confirmed)
-        return np.zeros(9, dtype=np.float32)
+        return np.zeros(5, dtype=np.float32)
 
     # ── Dataset protocol ─────────────────────────────────────────────────
 
@@ -268,8 +270,7 @@ class ArielDataset(Dataset):
         }
 
         if pid in self._labelled_ids:
-            target_mean, target_std = self._parse_labels(pid)
+            target_mean = self._parse_labels(pid)
             sample["target_mean"] = torch.from_numpy(target_mean)
-            sample["target_std"]  = torch.from_numpy(target_std)
 
         return sample
