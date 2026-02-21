@@ -121,9 +121,9 @@ class ArielDataset(Dataset):
         Target std   = (q3 - q1) / 2  (half-interquartile range ≈ 1-sigma)
         """
         row = self.labels.loc[int(pid)]
-        q1 = row.filter(like="_q1").values.astype(np.float32)
-        q2 = row.filter(like="_q2").values.astype(np.float32)
-        q3 = row.filter(like="_q3").values.astype(np.float32)
+        q1 = row.filter(regex=r"^\d+_q1$").values.astype(np.float32)
+        q2 = row.filter(regex=r"^\d+_q2$").values.astype(np.float32)
+        q3 = row.filter(regex=r"^\d+_q3$").values.astype(np.float32)
         return q2, (q3 - q1) / 2.0
 
     # ------------------------------------------------------------------
@@ -163,7 +163,8 @@ class ArielDataset(Dataset):
         return sample
 
     def __del__(self) -> None:
-        if self._h5 is not None:
+        # Use getattr to guard against __init__ failing before self._h5 is set
+        if getattr(self, "_h5", None) is not None:
             try:
                 self._h5.close()
             except Exception:
