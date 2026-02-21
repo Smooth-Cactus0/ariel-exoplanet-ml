@@ -97,3 +97,13 @@ def test_nll_penalises_overconfidence():
     assert loss_confident > loss_uncertain, (
         "overconfident predictions should have higher NLL than uncertain ones"
     )
+
+
+def test_nll_extreme_log_var_no_nan():
+    """gaussian_nll_loss must not produce NaN or Inf for extreme log_var values."""
+    mean   = torch.ones(4, 283)
+    target = torch.zeros(4, 283)
+    for lv in [-100.0, -50.0, 50.0, 100.0]:
+        log_var = torch.full((4, 283), lv)
+        loss = gaussian_nll_loss(mean, log_var, target)
+        assert torch.isfinite(loss), f"loss is not finite for log_var={lv}: {loss.item()}"

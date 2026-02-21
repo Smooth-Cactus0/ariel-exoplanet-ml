@@ -43,13 +43,16 @@ class TemporalEncoder(nn.Module):
         dropout: float = 0.1,
     ) -> None:
         super().__init__()
-        mid = max(64, embed_dim // 2)
+        # Monotonically widening channel progression: in_channels → h → embed_dim → embed_dim
+        # Using embed_dim//2 as the intermediate ensures no unintended bottleneck
+        # regardless of embed_dim magnitude (avoids the max(64,...) floor trap).
+        h = max(1, embed_dim // 2)
         self.conv = nn.Sequential(
-            nn.Conv1d(in_channels, mid, kernel_size=5, padding=2),
+            nn.Conv1d(in_channels, h,         kernel_size=5, padding=2),
             nn.GELU(),
-            nn.Conv1d(mid, mid * 2, kernel_size=5, padding=2),
+            nn.Conv1d(h,          embed_dim,  kernel_size=5, padding=2),
             nn.GELU(),
-            nn.Conv1d(mid * 2, embed_dim, kernel_size=3, padding=1),
+            nn.Conv1d(embed_dim,  embed_dim,  kernel_size=3, padding=1),
             nn.GELU(),
             nn.Dropout(dropout),
         )
@@ -151,5 +154,8 @@ def gaussian_nll_loss(
     -------
     scalar loss tensor
     """
-    var = torch.exp(log_var)
-    return 0.5 * (log_var + (target - mean).pow(2) / var).mean()
+    # Clamp log_var to [-20, 20] to prevent float32 exp() overflow/underflow.
+    # This keeps var in [2e-9, 5e8] — a safe range for ppm-scale transit depths.
+    log_var_safe = log_var.clamp(-20.0, 20.0)
+    var = torch.exp(log_var_safe)
+    return 0.5 * (log_var_safe + (target - mean).pow(2) / var).mean()
