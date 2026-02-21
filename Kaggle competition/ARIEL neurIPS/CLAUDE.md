@@ -143,7 +143,7 @@ All notebooks have a synthetic-data fallback for running without the competition
 ## Known Issues / TODOs
 
 - **HDF5 key names unconfirmed** — run `scripts/explore_data.py` on Kaggle and update `src/dataset.py` if `"AIRS-CH0"` or `"FGS1"` are wrong.
-- **`build_submission` column format unconfirmed** — verify against `sample_submission.csv` before submitting. See warning in `src/evaluate.py::build_submission`.
+- **`build_submission` column format confirmed** — blocked layout: `planet_id | wl_1…wl_283 | sigma_1…sigma_283` (1-indexed, 567 cols total).
 - **Results table in README.md** — populate after running the baseline and DL notebooks on Kaggle.
 - **HuggingFace token** — set `os.environ["HF_TOKEN"]` in `notebooks/05_huggingface_upload.ipynb` before running.
 - **GitHub repo URL** — all notebooks now reference `https://github.com/Smooth-Cactus0/ariel-exoplanet-ml` (confirmed).

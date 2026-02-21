@@ -109,39 +109,24 @@ def build_submission(
     stds: np.ndarray,
 ) -> pd.DataFrame:
     """
-    Build a submission DataFrame.
+    Build a submission DataFrame matching the competition format (verified).
 
-    Columns: planet_id, then interleaved mean/std per wavelength:
-        planet_id | 0_mean | 0_std | 1_mean | 1_std | ...
+    Format (567 columns total):
+        planet_id | wl_1 | wl_2 | ... | wl_283 | sigma_1 | sigma_2 | ... | sigma_283
 
-    .. warning::
-        Column names and layout **must be verified** against the competition's
-        ``sample_submission.csv`` before uploading to Kaggle.  The actual
-        format could differ in two ways:
-
-        1. **Prefix** — columns may be named ``wl_0_mean`` / ``wl_0_std``
-           rather than bare ``0_mean`` / ``0_std``.
-        2. **Layout** — all means first then all stds (blocked) rather than
-           interleaved per wavelength.
-
-        To verify, run on Kaggle::
-
-            import pandas as pd
-            ss = pd.read_csv('/kaggle/input/ariel-data-challenge-2024/sample_submission.csv', nrows=1)
-            print(list(ss.columns[:6]))   # inspect first few column names
-
-        Then update this function to match exactly.
+    Columns are 1-indexed. All 283 means come first (blocked), then all 283 sigmas.
+    This was confirmed from sample_submission.csv:
+        Total columns: 567
+        First 6: ['planet_id', 'wl_1', 'wl_2', 'wl_3', 'wl_4', 'wl_5']
+        Last  6: ['sigma_278', 'sigma_279', 'sigma_280', 'sigma_281', 'sigma_282', 'sigma_283']
     """
     n_wl = means.shape[1]
-    cols: list[str] = []
-    data_cols: list[np.ndarray] = []
-    for i in range(n_wl):
-        cols.append(f"{i}_mean")
-        cols.append(f"{i}_std")
-        data_cols.append(means[:, i])
-        data_cols.append(stds[:, i])
+    wl_cols    = [f"wl_{i+1}"    for i in range(n_wl)]
+    sigma_cols = [f"sigma_{i+1}" for i in range(n_wl)]
 
-    df = pd.DataFrame(dict(zip(cols, data_cols)))
+    df = pd.DataFrame(means, columns=wl_cols)
+    for col, vals in zip(sigma_cols, stds.T):
+        df[col] = vals
     df.insert(0, "planet_id", planet_ids)
     return df
 
