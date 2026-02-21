@@ -135,7 +135,7 @@ All notebooks have a synthetic-data fallback for running without the competition
 
 1. Write/edit code locally.
 2. `git push` to GitHub.
-3. In Kaggle notebook: `git clone https://github.com/alexy-louis/ariel-exoplanet-ml.git` then `sys.path.insert(0, "ariel-exoplanet-ml")`.
+3. In Kaggle notebook: `git clone https://github.com/Smooth-Cactus0/ariel-exoplanet-ml.git` then `sys.path.insert(0, "ariel-exoplanet-ml")`.
 4. Run notebook against the attached competition dataset.
 
 ---
@@ -146,4 +146,4 @@ All notebooks have a synthetic-data fallback for running without the competition
 - **`build_submission` column format unconfirmed** — verify against `sample_submission.csv` before submitting. See warning in `src/evaluate.py::build_submission`.
 - **Results table in README.md** — populate after running the baseline and DL notebooks on Kaggle.
 - **HuggingFace token** — set `os.environ["HF_TOKEN"]` in `notebooks/05_huggingface_upload.ipynb` before running.
-- **GitHub repo URL** — replace `YOUR_USERNAME` placeholder in all notebook setup cells with actual username.
+- **GitHub repo URL** — all notebooks now reference `https://github.com/Smooth-Cactus0/ariel-exoplanet-ml` (confirmed).

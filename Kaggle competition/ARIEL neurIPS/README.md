@@ -13,7 +13,7 @@ End-to-end deep learning pipeline for the **NeurIPS 2024 Ariel Data Challenge** 
 ### Quick Start
 
 ```bash
-git clone https://github.com/alexy-louis/ariel-exoplanet-ml.git
+git clone https://github.com/Smooth-Cactus0/ariel-exoplanet-ml.git
 cd ariel-exoplanet-ml
 pip install -r requirements.txt
 ```
@@ -67,7 +67,7 @@ See [src/preprocessing.py](src/preprocessing.py) for implementation and [noteboo
    ```python
    import subprocess, sys
    subprocess.run(["git", "clone",
-       "https://github.com/alexy-louis/ariel-exoplanet-ml.git",
+       "https://github.com/Smooth-Cactus0/ariel-exoplanet-ml.git",
        "/kaggle/working/ariel-exoplanet-ml"])
    sys.path.insert(0, "/kaggle/working/ariel-exoplanet-ml")
    ```
@@ -234,4 +234,4 @@ If you use this code or dataset, please cite the original competition:
 
 MIT — see [LICENSE](LICENSE).
 
-*Built by [Alexy Louis](https://github.com/alexy-louis) as part of an ML engineering portfolio.*
+*Built by [Alexy Louis](https://github.com/Smooth-Cactus0) as part of an ML engineering portfolio.*
