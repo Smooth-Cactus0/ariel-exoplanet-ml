@@ -24,11 +24,13 @@ def test_oot_mask_shape():
 
 
 def test_oot_mask_fractions():
-    mask = out_of_transit_mask(100, ingress=0.2, egress=0.8)
-    # First 20 and last 20 time steps are OOT
-    assert mask[:20].all(), "pre-ingress must be OOT"
-    assert mask[80:].all(), "post-egress must be OOT"
-    assert not mask[20:80].any(), "in-transit window must NOT be OOT"
+    ingress, egress = 0.2, 0.8
+    n = 100
+    mask = out_of_transit_mask(n, ingress=ingress, egress=egress)
+    t = np.linspace(0.0, 1.0, n)
+    # Verify against the exact time values, not integer-index assumptions
+    expected = (t < ingress) | (t > egress)
+    np.testing.assert_array_equal(mask, expected, err_msg="mask must match (t<ingress)|(t>egress)")
 
 
 # ---------------------------------------------------------------------------

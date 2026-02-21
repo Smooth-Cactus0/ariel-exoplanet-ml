@@ -99,10 +99,15 @@ def common_mode_correction(
     -------
     corrected : (time, wavelength)
     """
-    common = flux_norm.mean(axis=1, keepdims=True)  # (time, 1)
-    oot_level = common[mask_oot].mean()
-    common = common / oot_level                      # normalise common mode to 1.0
-    return flux_norm / common
+    common = flux_norm.mean(axis=1, keepdims=True)  # (time, 1) — wavelength mean
+    oot_level = common[mask_oot].mean()              # scalar ≈ 1.0
+
+    # Clamp in-transit frames to the OOT mean to prevent transit self-subtraction.
+    # If we divided by the raw in-transit common (which dips with the planet),
+    # we would boost in-transit flux back to ~1.0, erasing the transit signal.
+    safe_common = np.where(mask_oot[:, None], common, oot_level)
+    safe_common = safe_common / oot_level            # normalise so OOT ≈ 1.0
+    return flux_norm / safe_common
 
 
 def bin_time(
@@ -125,7 +130,7 @@ def bin_time(
     binned : (time // bin_size, ...) — same shape except first axis
     """
     if bin_size <= 1:
-        return flux
+        return flux.copy()  # copy to preserve pure-function guarantee
     n_time = flux.shape[0]
     n_bins = n_time // bin_size
     trimmed = flux[: n_bins * bin_size]
@@ -166,13 +171,16 @@ def extract_transit_depth(
 
     if weights is not None:
         w = weights[mask_it]
-        w = w / w.sum()              # normalise
+        w_norm = w / w.sum()                         # normalised weights sum to 1
         depth = 1.0 - np.average(in_transit, axis=0, weights=w)
+        # Effective sample size for weighted mean: n_eff = 1 / sum(w_norm²)
+        # Standard error = unweighted std / sqrt(n_eff), consistent with weighted mean
+        n_eff = 1.0 / (w_norm ** 2).sum()
+        depth_err = (1.0 - in_transit).std(axis=0) / np.sqrt(n_eff)
     else:
         depth = 1.0 - in_transit.mean(axis=0)
-
-    n = mask_it.sum()
-    depth_err = (1.0 - in_transit).std(axis=0) / np.sqrt(n)
+        n = mask_it.sum()
+        depth_err = (1.0 - in_transit).std(axis=0) / np.sqrt(n)
 
     return depth, depth_err
 
