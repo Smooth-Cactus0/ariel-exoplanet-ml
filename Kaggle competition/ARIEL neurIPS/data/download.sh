@@ -5,5 +5,5 @@
 set -e
 pip install kaggle --quiet
 kaggle competitions download -c ariel-data-challenge-2024
-unzip ariel-data-challenge-2024.zip -d data/raw/
+unzip ariel-data-challenge-2024.zip -d data/raw/ && rm ariel-data-challenge-2024.zip
 echo "Download complete. Raw data in data/raw/"
