@@ -113,6 +113,24 @@ def build_submission(
 
     Columns: planet_id, then interleaved mean/std per wavelength:
         planet_id | 0_mean | 0_std | 1_mean | 1_std | ...
+
+    .. warning::
+        Column names and layout **must be verified** against the competition's
+        ``sample_submission.csv`` before uploading to Kaggle.  The actual
+        format could differ in two ways:
+
+        1. **Prefix** — columns may be named ``wl_0_mean`` / ``wl_0_std``
+           rather than bare ``0_mean`` / ``0_std``.
+        2. **Layout** — all means first then all stds (blocked) rather than
+           interleaved per wavelength.
+
+        To verify, run on Kaggle::
+
+            import pandas as pd
+            ss = pd.read_csv('/kaggle/input/ariel-data-challenge-2024/sample_submission.csv', nrows=1)
+            print(list(ss.columns[:6]))   # inspect first few column names
+
+        Then update this function to match exactly.
     """
     n_wl = means.shape[1]
     cols: list[str] = []
