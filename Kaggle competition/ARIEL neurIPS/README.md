@@ -1,0 +1,237 @@
+# Ariel Exoplanet Atmospheric Retrieval
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Dataset on HuggingFace](https://img.shields.io/badge/🤗%20Dataset-alexy--louis%2Fariel--exoplanet--2024-blue)](https://huggingface.co/datasets/alexy-louis/ariel-exoplanet-2024)
+[![Kaggle Competition](https://img.shields.io/badge/Kaggle-NeurIPS%202024%20Ariel-20BEFF?logo=kaggle)](https://www.kaggle.com/competitions/ariel-data-challenge-2024)
+
+End-to-end deep learning pipeline for the **NeurIPS 2024 Ariel Data Challenge** — extracting exoplanet atmospheric transmission spectra from simulated ESA Ariel telescope photometry.
+
+---
+
+## For ML Practitioners
+
+### Quick Start
+
+```bash
+git clone https://github.com/alexy-louis/ariel-exoplanet-ml.git
+cd ariel-exoplanet-ml
+pip install -r requirements.txt
+```
+
+> **Data lives on Kaggle** (~180 GB). See [data/download.sh](data/download.sh) for download instructions, or work directly in a [Kaggle notebook](https://www.kaggle.com/competitions/ariel-data-challenge-2024) with the dataset pre-attached.
+
+### Data Format
+
+| File | Description | Shape per planet |
+|------|-------------|-----------------|
+| `train.hdf5` | AIRS-CH0 flux cubes + FGS1 light curves | AIRS: `(time × 356)`, FGS1: `(time,)` |
+| `AuxillaryTable.csv` | 9 stellar/planetary parameters | `(n_planets, 9)` |
+| `QuartilesTable.csv` | Ground-truth transmission spectra (q1/q2/q3) | `(~24% planets, 849)` |
+| `sample_submission.csv` | Required submission format | — |
+
+Run `scripts/explore_data.py` on Kaggle to confirm exact HDF5 key names and file layout:
+```bash
+python scripts/explore_data.py --data-root /kaggle/input/ariel-data-challenge-2024
+```
+
+### Model Architecture: TransitCNN
+
+```
+AIRS-CH0 (356, time) ──► TemporalEncoder ──► z_airs (128,)  ┐
+FGS1      (  1, time) ──► TemporalEncoder ──► z_fgs1 ( 32,)  ├──► Fusion MLP ──► mean (283,)
+aux        (       9) ─────────────────────────────────────────┘                └──► log_var (283,)
+```
+
+- **TemporalEncoder**: 3-layer Conv1D → GELU → AdaptiveAvgPool1d(1)
+- **Fusion MLP**: Linear(169→512→512→256) with GELU + dropout
+- **Loss**: Gaussian NLL: `0.5 * (log_var + (y − μ)² / exp(log_var))`
+- **Output**: per-wavelength mean + calibrated uncertainty for 283 wavelength bins
+
+### Preprocessing Pipeline
+
+```
+Raw AIRS (time × 356)
+  │
+  ▼ baseline_normalize()     — divide each channel by its OOT median
+  ▼ common_mode_correction()  — subtract correlated stellar/instrumental variability
+  ▼ bin_time(bin_size=5)      — temporal binning: SNR ∝ √bin_size
+  │
+  └──► transit_depth per channel = 1 − (mean in-transit / OOT) ± noise
+```
+
+See [src/preprocessing.py](src/preprocessing.py) for implementation and [notebooks/02_preprocessing.ipynb](notebooks/02_preprocessing.ipynb) for a step-by-step visual walkthrough.
+
+### Reproduction Steps (Kaggle)
+
+1. **Clone repo inside Kaggle notebook** (Internet enabled):
+   ```python
+   import subprocess, sys
+   subprocess.run(["git", "clone",
+       "https://github.com/alexy-louis/ariel-exoplanet-ml.git",
+       "/kaggle/working/ariel-exoplanet-ml"])
+   sys.path.insert(0, "/kaggle/working/ariel-exoplanet-ml")
+   ```
+
+2. **Run EDA**: [notebooks/01_eda.ipynb](notebooks/01_eda.ipynb)
+
+3. **Train baseline** (CPU, ~2 min): [notebooks/03_baseline.ipynb](notebooks/03_baseline.ipynb)
+
+4. **Train TransitCNN** (GPU T4/P100, ~45 min): [notebooks/04_deep_learning.ipynb](notebooks/04_deep_learning.ipynb)
+
+5. **Generate submission**: notebook 04 writes `submission.csv` automatically.
+
+### Results
+
+| Method | Val GLL | Notes |
+|--------|---------|-------|
+| Constant median predictor | — | Run baseline notebook to populate |
+| Ridge regression on aux | — | Run baseline notebook to populate |
+| TransitCNN (this repo) | — | Run DL notebook to populate |
+
+*GLL = Gaussian Log-Likelihood. Higher is better; 0 = perfect; competition normalizes against a reference baseline.*
+
+### Repository Structure
+
+```
+ariel-exoplanet-ml/
+├── src/
+│   ├── preprocessing.py   # Signal processing pipeline (6 functions, 9 tests)
+│   ├── dataset.py          # PyTorch Dataset wrapping HDF5 + CSV data
+│   ├── model.py            # TransitCNN + gaussian_nll_loss
+│   ├── train.py            # Training loop (AdamW + CosineAnnealingLR)
+│   └── evaluate.py         # Inference, GLL metric, submission CSV
+├── notebooks/
+│   ├── 01_eda.ipynb                # Exploratory data analysis
+│   ├── 02_preprocessing.ipynb      # Preprocessing walkthrough
+│   ├── 03_baseline.ipynb           # Statistical baselines
+│   ├── 04_deep_learning.ipynb      # TransitCNN training + submission
+│   └── 05_huggingface_upload.ipynb # Preprocess + push to HF Hub
+├── hf_dataset/
+│   └── ariel_dataset.py   # HuggingFace Datasets loading script
+├── scripts/
+│   └── explore_data.py    # One-shot data structure discovery
+├── tests/                 # 25 unit tests (pytest)
+├── data/download.sh       # Kaggle API download script
+└── requirements.txt
+```
+
+### Running Tests (Local)
+
+```bash
+# Requires Python 3.9+ with numpy, torch, pandas, scipy, h5py
+pytest tests/ -v
+```
+
+All 25 tests pass without competition data — they use synthetic fixtures.
+
+---
+
+## For Astronomers
+
+### The Science: What Is Atmospheric Retrieval?
+
+When an exoplanet transits (passes in front of) its host star, the planet's atmosphere absorbs some starlight at specific wavelengths. By measuring how much the star dims as a function of wavelength, we can infer the composition of the planet's atmosphere — this is the **transmission spectrum**.
+
+```
+        Star
+      ████████
+    ██  ████  ██
+   ██   ████   ██
+   ██  ○ Planet  ██     ← Planet + atmosphere blocks star
+   ██   ████   ██       at wavelengths absorbed by H₂O, CO₂, CH₄, etc.
+    ██  ████  ██
+      ████████
+```
+
+The **transit depth** at wavelength λ is:
+
+```
+D(λ) = [R_p(λ) / R_*]²
+```
+
+where `R_p(λ)` is the effective planetary radius including atmosphere. Larger depth = more absorption at that wavelength.
+
+### The Ariel Mission
+
+[ESA Ariel](https://www.ariel-spacemission.eu/) (Atmospheric Remote-sensing Infrared Exoplanet Large-survey), launching 2029, will characterize atmospheres of ~1000 exoplanets using:
+- **AIRS-CH0**: IR spectrometer, 1.95–3.90 µm — sensitive to H₂O, CO₂, CH₄, CO
+- **FGS1**: Visible photometer, 0.60–0.80 µm — photometric reference channel
+
+This competition uses simulated Ariel data to benchmark atmospheric retrieval algorithms ahead of launch.
+
+### Systematic Effects We Correct For
+
+Real space photometry is corrupted by:
+
+1. **Baseline drift**: stellar variability, pointing jitter, thermal settling. We normalize each wavelength channel by its out-of-transit (OOT) median.
+
+2. **Common-mode systematics**: correlated noise from the detector or stellar limb darkening variability. We compute the mean light curve across all wavelength channels and divide it out — but *only using OOT frames* to avoid erasing the transit signal.
+
+3. **Photon noise**: random photon-counting noise. We bin consecutive time steps (5× binning ≈ √5 ≈ 2.2× noise reduction).
+
+### How to Apply This to Your Own Transit Data
+
+The preprocessing pipeline is instrument-agnostic. For any transit photometry dataset:
+
+```python
+from src.preprocessing import preprocess_planet
+import numpy as np
+
+# airs: numpy array of shape (n_timesteps, n_wavelengths)
+# fgs1: numpy array of shape (n_timesteps,) — photometric reference
+airs = np.load("your_airs_data.npy")
+fgs1 = np.load("your_fgs1_data.npy")
+
+result = preprocess_planet(
+    airs, fgs1,
+    ingress=0.2,    # fraction of obs where transit starts
+    egress=0.8,     # fraction of obs where transit ends
+    bin_size=5,
+)
+
+print(result["transit_depth"])      # (n_wavelengths,) — transmission spectrum
+print(result["transit_depth_err"])  # (n_wavelengths,) — 1σ uncertainty
+```
+
+The ingress/egress fractions can be derived from orbital parameters:
+```
+ingress ≈ 0.5 - T14 / (2 * T_obs)
+egress  ≈ 0.5 + T14 / (2 * T_obs)
+```
+where `T14` is the transit duration (first to fourth contact) and `T_obs` is the total observation length.
+
+### Preprocessed Dataset on HuggingFace
+
+A preprocessed version of the competition data (normalized, binned, transit depths extracted) is available on HuggingFace Hub:
+
+```python
+from datasets import load_dataset
+ds = load_dataset("alexy-louis/ariel-exoplanet-2024", split="train")
+
+sample = ds[0]
+print(sample["transit_depth"])     # 356-element float32 array
+print(sample["aux"])               # [star_distance, stellar_mass, stellar_radius, ...]
+```
+
+---
+
+## Citation
+
+If you use this code or dataset, please cite the original competition:
+
+```bibtex
+@misc{ariel2024,
+  title  = {NeurIPS Ariel Data Challenge 2024},
+  author = {Ariel Data Challenge Team},
+  year   = {2024},
+  url    = {https://www.kaggle.com/competitions/ariel-data-challenge-2024}
+}
+```
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+*Built by [Alexy Louis](https://github.com/alexy-louis) as part of an ML engineering portfolio.*
